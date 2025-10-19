@@ -1,83 +1,144 @@
-#include "FrequencyTracker.h"
+/*
+ * Author: Alex Staples
+ * Last updated: October 18, 2025
+ * SNHU CS210 Project Three - Corner Grocer item tracking program
+ */
 
-#include <algorithm>
-#include <cctype>
+#include "FrequencyTracker.h"
 #include <fstream>
 #include <iostream>
-#include <string>
+#include <algorithm>
 
-namespace {
-// Convert to lowercase for case-insensitive counting/search.
-std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return s;
+// ANSI color codes for enhanced output formatting
+const std::string COLOR_RESET = "\033[0m";
+const std::string COLOR_GREEN = "\033[32m";
+const std::string COLOR_YELLOW = "\033[33m";
+const std::string COLOR_CYAN = "\033[36m";
+
+// Constructor - just saves the file names for later use
+FrequencyTracker::FrequencyTracker(const std::string& inputFilePath, const std::string& backupFilePath)
+    : inputDataFilePath(inputFilePath), backupDataFilePath(backupFilePath) {
 }
-} // namespace
 
-FrequencyTracker::FrequencyTracker(const std::string& t_inputPath,
-                                   const std::string& t_backupPath)
-    : m_inputPath(t_inputPath), m_backupPath(t_backupPath) {}
+/**
+ * Helper function to make strings lowercase
+ * This lets us treat "Apple" and "apple" as the same item
+ * @param inputString the string to convert
+ * @return the same string but all lowercase
+ */
+std::string toLower(const std::string& inputString) {
+    std::string lowercaseResult = inputString;
+    std::transform(lowercaseResult.begin(), lowercaseResult.end(), 
+                   lowercaseResult.begin(), ::tolower);
+    return lowercaseResult;
+}
 
+/**
+ * Reads the input file and counts how many times each item appears
+ * Each line in the file should have one item name
+ */
 bool FrequencyTracker::load() {
-    std::ifstream in(m_inputPath);
-    if (!in.is_open()) {
-        std::cerr << "Error: could not open input file: " << m_inputPath << "\n";
+    std::ifstream inputFileStream(inputDataFilePath);
+    
+    // Make sure we can actually open the file
+    if (!inputFileStream.is_open()) {
+        std::cerr << "Error: Unable to open input file: " << inputDataFilePath << std::endl;
         return false;
     }
 
-    std::string line;
-    while (std::getline(in, line)) {
-        if (!line.empty() && line.back() == '\r') line.pop_back(); // handle CRLF
-        if (line.empty()) continue;
-
-        // Per spec, each line is one word. Normalize to lowercase.
-        ++m_freq[toLower(line)];
+    std::string currentItemName;
+    
+    // Read the file line by line
+    while (std::getline(inputFileStream, currentItemName)) {
+        // Skip empty lines
+        if (currentItemName.empty()) {
+            continue;
+        }
+        
+        // Convert to lowercase so "Apple" and "apple" count as the same thing
+        std::string normalizedItemName = toLower(currentItemName);
+        // Add 1 to this item's count (creates the item if it's new)
+        itemFrequencyMap[normalizedItemName]++;
     }
-    in.close();
+
+    inputFileStream.close();
+    std::cout << "Successfully loaded " << itemFrequencyMap.size() 
+              << " unique items from input file." << std::endl;
+    
     return true;
 }
 
 bool FrequencyTracker::writeBackup() const {
-    std::ofstream out(m_backupPath);
-    if (!out.is_open()) {
-        std::cerr << "Error: could not write backup file: " << m_backupPath << "\n";
+    std::ofstream backupFileStream(backupDataFilePath);
+    
+    if (!backupFileStream.is_open()) {
+        std::cerr << "Error: Unable to create backup file: " << backupDataFilePath << std::endl;
         return false;
     }
-    for (const auto& kv : m_freq) {
-        out << kv.first << ' ' << kv.second << '\n';
+
+    // Write each item and its count to the backup file
+    for (const auto& itemFrequencyPair : itemFrequencyMap) {
+        const std::string& itemName = itemFrequencyPair.first;
+        const int frequencyCount = itemFrequencyPair.second;
+        backupFileStream << itemName << " " << frequencyCount << std::endl;
     }
-    out.close();
+
+    backupFileStream.close();
+    std::cout << "Backup file '" << backupDataFilePath << "' created successfully." << std::endl;
+    
     return true;
 }
 
-int FrequencyTracker::countOf(const std::string& t_item) const {
-    const auto it = m_freq.find(toLower(t_item));
-    return (it == m_freq.end()) ? 0 : it->second;
+int FrequencyTracker::countOf(const std::string& itemName) const {
+    std::string normalizedSearchTerm = toLower(itemName);
+    auto itemIterator = itemFrequencyMap.find(normalizedSearchTerm);
+    return (itemIterator != itemFrequencyMap.end()) ? itemIterator->second : 0;
 }
 
-void FrequencyTracker::printAll(std::ostream& os) const {
-    for (const auto& kv : m_freq) {
-        os << kv.first << ' ' << kv.second << '\n';
+void FrequencyTracker::printAll(std::ostream& outputStream) const {
+    if (itemFrequencyMap.empty()) {
+        outputStream << "No inventory data available to display." << std::endl;
+        return;
     }
+
+    outputStream << "\n=== COMPLETE INVENTORY REPORT ===" << std::endl;
+    outputStream << "Item Name" << "\t\t" << "Frequency" << std::endl;
+    outputStream << "----------------------------------------" << std::endl;
+
+    // Print each item and its frequency count
+    for (const auto& inventoryEntry : itemFrequencyMap) {
+        const std::string& itemName = inventoryEntry.first;
+        const int itemCount = inventoryEntry.second;
+        outputStream << itemName << "\t\t" << itemCount << std::endl;
+    }
+    
+    outputStream << "----------------------------------------" << std::endl;
 }
 
-void FrequencyTracker::printHistogram(std::ostream& os, char symbol) const {
-    // Simple ANSI colors for a bit of visual flair. Safe to remove if needed.
-    static const std::string colors[] = {
-        "\033[31m", "\033[32m", "\033[33m",
-        "\033[34m", "\033[35m", "\033[36m"
-    };
-    static const std::string reset = "\033[0m";
+void FrequencyTracker::printHistogram(std::ostream& outputStream, char displaySymbol) const {
+    if (itemFrequencyMap.empty()) {
+        outputStream << "No inventory data available for histogram display." << std::endl;
+        return;
+    }
 
-    int idx = 0;
-    for (const auto& kv : m_freq) {
-        os << kv.first << ' ';
-        const std::string& color = colors[idx % 6];
-        for (int i = 0; i < kv.second; ++i) {
-            os << color << symbol << reset;
+    outputStream << "\n=== INVENTORY FREQUENCY HISTOGRAM ===" << std::endl;
+    outputStream << "Visual representation of item frequencies:" << std::endl;
+    outputStream << "----------------------------------------" << std::endl;
+
+    // Print each item with visual bars showing frequency
+    for (const auto& inventoryEntry : itemFrequencyMap) {
+        const std::string& itemName = inventoryEntry.first;
+        const int frequencyCount = inventoryEntry.second;
+        
+        outputStream << itemName << " ";
+        
+        // Print one symbol for each occurrence
+        for (int symbolIndex = 0; symbolIndex < frequencyCount; ++symbolIndex) {
+            outputStream << displaySymbol;
         }
-        os << '\n';
-        ++idx;
+        
+        outputStream << " (" << frequencyCount << ")" << std::endl;
     }
+    
+    outputStream << "----------------------------------------" << std::endl;
 }
